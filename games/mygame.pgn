@@ -1,0 +1,36 @@
+[Event "Live Chess"]
+[Site "Chess.com"]
+[Date "2026.10.16"]
+[Round "-"]
+[White "Ali-nk-d"]
+[Black "masterbeyts326988"]
+[Result "0-1"]
+[CurrentPosition "7K/pp3kq1/5p2/1P3P2/8/8/8/8 w - - 8 49"]
+[Timezone "UTC"]
+[ECO "D11"]
+[ECOUrl "https://www.chess.com/openings/Slav-Defense-Modern-Bishops-Game"]
+[UTCDate "2026.10.16"]
+[UTCTime "10:05:30"]
+[WhiteElo "974"]
+[BlackElo "989"]
+[TimeControl "600"]
+[Termination "masterbeyts326988 won by checkmate"]
+[StartTime "10:05:30"]
+[EndDate "2026.10.16"]
+[EndTime "10:11:30"]
+[Link "https://www.chess.com/analysis/game/live/185413890602/review?move=20"]
+[WhiteUrl "https://images.chesscomfiles.com/uploads/v1/user/529763553.ece3a2ea.50x50o.8c2e94aa48a8.jpg"]
+[WhiteCountry "223"]
+[WhiteTitle ""]
+[BlackUrl "https://www.chess.com/bundles/web/images/noavatar_l.84a92436.gif"]
+[BlackCountry "111"]
+[BlackTitle ""]
+
+1. d4 d5 2. c4 c6 3. Nf3 Bf5 4. Bf4 e6 5. e3 Bd6 6. Bg3 Nf6 7. Nc3 O-O 8. c5
+Bxg3 9. hxg3 Nbd7 10. Bd3 Ne4 11. Nxe4 $4 Bxe4 12. Bxe4 dxe4 13. Ne5 Nxe5 14.
+dxe5 Qa5+ 15. Qd2 Qxc5 16. Rc1 Qxe5 17. f4 exf3 18. gxf3 Qxg3+ 19. Qf2 Qxf2+ 20.
+Kxf2 Rfd8 21. Rh2 Rd2+ 22. Kg3 Rad8 23. Rch1 h6 24. f4 R8d3 25. Kf3 f6 26. Ke4
+Rd5 27. Kf3 e5 28. f5 Kf7 29. e4 R5d3+ 30. Kg4 Rxh2 31. Rxh2 Re3 32. Rd2 Ke7 33.
+Kh5 Rxe4 34. Kg6 Rg4+ 35. Kh7 Rd4 36. Rg2 Kd8 37. Rxg7 Rd7 38. Rxd7+ Kxd7 39.
+Kxh6 e4 40. Kg6 Ke7 41. a4 e3 42. b4 e2 43. b5 cxb5 44. axb5 e1=Q 45. Kg7 Qg3+
+46. Kh6 Qg5+ 47. Kh7 Kf7 48. Kh8 Qg7# 0-1

@@ -1,111 +1,66 @@
-"""Command-line interface for V-Chess game review."""
-
+"""Usage: python cli.py review game.pgn [--depth 18] [--flat] [--save] [--no-cache]"""
 import argparse
-from pathlib import Path
 import sys
+from pathlib import Path
 
-import chess
-import chess.pgn
+from backend import book as book_module
+from backend import db
+from backend.importers import import_pgn_text
+from backend.review import review_game
 
-from backend.analysis import Engine
-from backend.classify import classify, win_pct
+ORDER = ["Brilliant", "Great", "Book", "Best", "Excellent", "Good", "Inaccuracy", "Mistake", "Miss", "Blunder"]
 
+def cmd_review(args):
+    text = Path(args.pgn).read_text(encoding="utf-8")
+    conn = None if args.no_cache and not args.save else db.connect()
+    book = None if args.no_book else book_module.load()
+    if book is None and not args.no_book:
+        print("Note: no opening book found (run: python -m backend.book build). Book moves will not be labelled.", file=sys.stderr)
 
-def review_game(pgn_path: str | Path, depth: int = 12) -> None:
-    """Analyze a PGN game move-by-move and print classifications and win% drops."""
-    path = Path(pgn_path)
-    if not path.is_file():
-        print(f"Error: PGN file not found: {path}", file=sys.stderr)
-        sys.exit(1)
+    def progress(done, total):          # shown on stderr, so it never mixes with the table
+        print(f"\rAnalysing move {done}/{total}", end="", file=sys.stderr, flush=True)
 
-    with open(path, "r", encoding="utf-8") as f:
-        game = chess.pgn.read_game(f)
-
-    if game is None:
-        print(f"Error: No valid chess game found in {path}", file=sys.stderr)
-        sys.exit(1)
-
-    headers = game.headers
-    white = headers.get("White", "White")
-    black = headers.get("Black", "Black")
-    result = headers.get("Result", "*")
-    event = headers.get("Event", "Game")
-
-    print(f"\nReviewing: {white} vs {black} ({result}) - {event}")
-    print(f"Engine Depth: {depth}\n")
-    print(f"{'Move':<12} {'Label':<14} {'Drop':<10} {'Win% (Mover)'}")
+    result = review_game(text, depth=args.depth, conn=None if args.no_cache else conn,
+                         adaptive=not args.flat, on_progress=progress, book=book)
+    print("\r" + " " * 30 + "\r", end="", file=sys.stderr)   # clear the progress line
+    h = result["headers"]
+    print(f"\nReviewing: {h.get('White', '?')} vs {h.get('Black', '?')} ({h.get('Result', '*')}) - {h.get('Event', '')}")
+    print(f"Engine Depth: {args.depth}" + (" (deeper as pieces come off)" if not args.flat else " (flat)") + "\n")
+    print(f"{'Move':<12} {'Label':<14} {'Drop':<10} Win% (Mover)")
     print("-" * 52)
-
-    board = game.board()
-    white_counts: dict[str, int] = {}
-    black_counts: dict[str, int] = {}
-
-    with Engine() as engine:
-        for move in game.mainline_moves():
-            ply = board.ply() + 1
-            is_white = (ply % 2 == 1)
-            move_num = (ply + 1) // 2
-            san = board.san(move)
-            move_str = f"{move_num}. {san}" if is_white else f"{move_num}... {san}"
-
-            # Mover's winning chances before move
-            fen_before = board.fen()
-            info_before = engine.analyse(fen_before, depth=depth, multipv=1)[0]
-            wb = win_pct(cp=info_before["cp"], mate=info_before["mate"])
-
-            # Make the move
-            board.push(move)
-
-            # Mover's winning chances after move
-            if board.is_checkmate():
-                wa = 100.0
-            elif board.is_stalemate() or board.is_insufficient_material():
-                wa = 50.0
-            else:
-                fen_after = board.fen()
-                info_after = engine.analyse(fen_after, depth=depth, multipv=1)[0]
-                # info_after is from opponent's perspective -> invert for mover
-                m_cp = -info_after["cp"] if info_after["cp"] is not None else None
-                m_mate = -info_after["mate"] if info_after["mate"] is not None else None
-                wa = win_pct(cp=m_cp, mate=m_mate)
-
-            drop = max(0.0, wb - wa)
-            label = classify(wb, wa)
-
-            counts = white_counts if is_white else black_counts
-            counts[label] = counts.get(label, 0) + 1
-
-            drop_str = f"{drop:.1f}%"
-            win_prog = f"{wb:.1f}% -> {wa:.1f}%"
-            print(f"{move_str:<12} {label:<14} {drop_str:<10} {win_prog}")
-
+    counts = {"w": dict.fromkeys(ORDER, 0), "b": dict.fromkeys(ORDER, 0)}
+    for m in result["moves"]:
+        white = m["ply"] % 2 == 1
+        name = f"{(m['ply'] + 1) // 2}. {m['san']}" if white else f"{m['ply'] // 2}... {m['san']}"
+        drop = max(0.0, m["win_before"] - m["win_after"])
+        drop_s = f"{drop:.1f}%"
+        print(f"{name:<12} {m['label']:<14} {drop_s:<10} {m['win_before']:.1f}% -> {m['win_after']:.1f}%")
+        counts["w" if white else "b"][m["label"]] += 1
     print("\n" + "=" * 52)
     print("Move Summary:")
-    all_labels = ["Best", "Good", "Inaccuracy", "Mistake", "Blunder"]
-    print(f"{'Label':<14} {'White':<8} {'Black':<8}")
+    print(f"{'Label':<14} {'White':<8} Black")
     print("-" * 32)
-    for l in all_labels:
-        w_c = white_counts.get(l, 0)
-        b_c = black_counts.get(l, 0)
-        print(f"{l:<14} {w_c:<8} {b_c:<8}")
+    for label in ORDER:
+        print(f"{label:<14} {counts['w'][label]:<8} {counts['b'][label]}")
     print("=" * 52 + "\n")
+    if args.save:
+        game_id, _ = import_pgn_text(conn, text)[0]
+        db.save_moves(conn, game_id, result["moves"])
+        print(f"Saved to database as game {game_id}")
 
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="V-Chess command-line game analysis.")
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    review_parser = subparsers.add_parser("review", help="Review a PGN game.")
-    review_parser.add_argument("pgn", help="Path to the PGN file.")
-    review_parser.add_argument(
-        "--depth", type=int, default=12, help="Engine search depth (default: 12)."
-    )
-
-    args = parser.parse_args()
-
-    if args.command == "review":
-        review_game(args.pgn, depth=args.depth)
-
+def main():
+    p = argparse.ArgumentParser()
+    sub = p.add_subparsers(dest="cmd", required=True)
+    r = sub.add_parser("review")
+    r.add_argument("pgn")
+    r.add_argument("--depth", type=int, default=18)
+    r.add_argument("--flat", action="store_true", help="same depth for every position")
+    r.add_argument("--no-book", action="store_true", help="do not label opening-book moves")
+    r.add_argument("--save", action="store_true", help="store the reviewed game in the database")
+    r.add_argument("--no-cache", action="store_true", help="ignore the eval cache")
+    r.set_defaults(func=cmd_review)
+    args = p.parse_args()
+    args.func(args)
 
 if __name__ == "__main__":
     main()

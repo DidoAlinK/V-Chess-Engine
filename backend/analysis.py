@@ -8,7 +8,10 @@ from typing import Generator
 
 import chess
 import chess.engine
+import os
 
+THREADS = max(1, int((os.cpu_count() or 4) * 0.6))   # your 20 logical CPUs -> 12 threads
+HASH_MB = 2048                                        # 2 GB of Stockfish's hash table
 
 def get_engine_path(config_path: str | Path | None = None) -> str:
     """Read the UCI engine path from config.toml, or fall back to system PATH."""
@@ -60,6 +63,8 @@ class Engine:
     def start(self) -> None:
         if self._engine is None:
             self._engine = chess.engine.SimpleEngine.popen_uci(self.engine_path)
+            self._engine.configure({"Threads": THREADS, "Hash": HASH_MB})
+
 
     def close(self) -> None:
         """Terminate the engine and ensure the underlying process is completely killed."""
@@ -92,7 +97,7 @@ class Engine:
     def analyse(self, fen: str, depth: int = 12, multipv: int = 1) -> list[dict]:
         """Analyse a position given by FEN at specified depth and multipv.
 
-        Returns a list of dicts: [{"move_uci": str | None, "cp": int | None, "mate": int | None}, ...]
+        Returns a list of dicts: [{"move_uci": str | None, "cp": int | None, "mate": int | None, "pv": [uci, ...]}, ...]
         Scores are always from the mover's perspective.
         """
         self.start()
@@ -134,6 +139,7 @@ class Engine:
                 "move_uci": move_uci,
                 "cp": cp,
                 "mate": mate,
+                "pv": [m.uci() for m in (pv or [])[:8]],   # first moves of the engine's line
             })
 
         return results

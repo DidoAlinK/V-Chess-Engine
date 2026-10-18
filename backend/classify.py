@@ -1,96 +1,47 @@
-"""Move quality classification and win percentage conversion using Lichess formula."""
-
+"""Win% and move labels. All numbers are from the MOVER's point of view."""
 import math
-from typing import Any
 
+# Tunable rules (fitted to a first game; recalibrate as you review more games)
+GREAT_GAP = 8.0             # best move beats the 2nd-best by this many win% points -> Great
+BRILLIANT_MAX_WIN_BEFORE = 80.0   # no Brilliant when you were already clearly winning
+BRILLIANT_MIN_WIN_AFTER = 45.0    # ...and the sacrifice must not leave you worse
+MISS_MIN_WIN_BEFORE = 65.0  # you were clearly better...
+MISS_MIN_DROP = 10.0        # ...and threw a big part of it away
+MISS_MAX_WIN_AFTER = 60.0   # ...so the advantage is mostly gone (88% -> 78% is just a Good move)
+MISS_MIN_WIN_AFTER = 35.0   # (if you are simply lost afterwards it is a Blunder, not a Miss)
 
-def win_pct(cp: Any = None, mate: int | None = None) -> float:
-    """Calculate winning percentage (0.0 to 100.0) from centipawns or mate.
-
-    Uses the empirical Lichess logistic formula:
-        win% = 50 + 50 * (2 / (1 + exp(-0.00368208 * cp)) - 1)
-
-    Eval is always from the mover's perspective.
-    """
-    # Direct mate parameter
+def win_pct(cp, mate=None):
+    """Win chance 0-100 for the side whose score this is (Lichess formula)."""
     if mate is not None:
-        if mate > 0:
-            return 100.0
-        elif mate < 0:
-            return 0.0
-        else:
-            return 100.0
-
-    # Support python-chess PovScore / Score objects
-    if hasattr(cp, "is_mate") and callable(cp.is_mate):
-        if cp.is_mate():
-            m = cp.mate()
-            if m is not None:
-                return 100.0 if m >= 0 else 0.0
-            return 100.0
-        cp = cp.score()
-
-    # None defaults to equal chances (50.0)
+        return 100.0 if mate > 0 else 0.0      # mate 0 = this side is already checkmated
     if cp is None:
-        return 50.0
+        raise ValueError("need cp or mate")
+    cp = max(-1000, min(1000, cp))              # Lichess clamps at +-1000 centipawns
+    return 50 + 50 * (2 / (1 + math.exp(-0.00368208 * cp)) - 1)
 
-    # Parse string representations like "+M3", "-M1", "#1", or numeric strings
-    if isinstance(cp, str):
-        s = cp.strip()
-        if s.startswith("+M") or s.startswith("#") or s.startswith("M"):
-            return 100.0
-        if s.startswith("-M") or s.startswith("-#"):
-            return 0.0
-        try:
-            cp = float(s)
-        except ValueError:
-            return 50.0
-
-    # Infinities or engine mate score bounds (e.g. >= 10000 or <= -10000)
-    if cp == float("inf") or cp >= 9000:
-        return 100.0
-    if cp == float("-inf") or cp <= -9000:
-        return 0.0
-
-    # Guard against overflow in math.exp
-    exp_arg = -0.00368208 * float(cp)
-    if exp_arg > 700.0:
-        return 0.0
-    if exp_arg < -700.0:
-        return 100.0
-
-    return 50.0 + 50.0 * (2.0 / (1.0 + math.exp(exp_arg)) - 1.0)
-
-
-def classify(win_before: float, win_after: float) -> str:
-    """Classify a move based on drop in win percentage (from mover's perspective).
-
+def classify(win_before, win_after, is_best_move=False, *, is_book=False, gap=None, sacrifice=False):
+    """win_before: mover's win% before the move (after the engine's best move).
+    win_after: mover's win% after the move actually played.
+    gap: win% lead of the best move over the 2nd best (None if unknown).
+    sacrifice: the move gives up material that is not regained."""
+    if is_book:
+        return "Book"
     drop = win_before - win_after
-
-    Thresholds:
-      drop <= 2%  -> "Best"
-      drop <= 5%  -> "Good"
-      drop <= 10% -> "Inaccuracy"
-      drop <= 20% -> "Mistake"
-      drop > 20%  -> "Blunder"
-    """
-    wb = float(win_before)
-    wa = float(win_after)
-
-    # If inputs were provided as 0.0-1.0 probabilities, normalize to 0.0-100.0
-    if 0.0 <= wb <= 1.0 and 0.0 <= wa <= 1.0 and (wb > 0 or wa > 0):
-        wb *= 100.0
-        wa *= 100.0
-
-    drop = round(wb - wa, 6)
-
-    if drop <= 2.0:
+    if sacrifice and drop <= 2 and win_before <= BRILLIANT_MAX_WIN_BEFORE and win_after >= BRILLIANT_MIN_WIN_AFTER:
+        return "Brilliant"
+    if is_best_move:
+        if gap is not None and gap >= GREAT_GAP:
+            return "Great"
         return "Best"
-    elif drop <= 5.0:
+    if (win_before >= MISS_MIN_WIN_BEFORE and drop >= MISS_MIN_DROP
+            and MISS_MIN_WIN_AFTER <= win_after <= MISS_MAX_WIN_AFTER):
+        return "Miss"
+    if drop <= 2:
+        return "Excellent"
+    if drop <= 5:
         return "Good"
-    elif drop <= 10.0:
+    if drop <= 10:
         return "Inaccuracy"
-    elif drop <= 20.0:
+    if drop <= 20:
         return "Mistake"
-    else:
-        return "Blunder"
+    return "Blunder"
